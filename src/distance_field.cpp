@@ -17,7 +17,7 @@
  * @author Naoki Akai
  ****************************************************************************/
 
-#include <mcl3d_ros/DistanceField.h>
+#include <mcl3d_ros/DistanceField.hpp>
 
 namespace mcl3d {
 

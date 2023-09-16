@@ -1,13 +1,31 @@
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
+/****************************************************************************
+ * mcl3d_ros: 3D Monte Carlo localization for ROS use
+ * Copyright (C) 2023 Naoki Akai
+ *
+ * Licensed under the Apache License, Version 2.0 (the “License”);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an “AS IS” BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @author Naoki Akai
+ ****************************************************************************/
+
+#include <ros/ros.h>
+#include <sensor_msgs/PointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/conversions.h>
-#include <pcl_ros/transforms.hpp>
+#include <pcl_ros/transforms.h>
 #include <pcl/io/pcd_io.h>
-#include <mcl3d_ros/DistanceField.hpp>
+#include <mcl3d_ros/DistanceField.h>
 
 mcl3d::DistanceField distMap;
 bool doneMapBuild = false;
@@ -37,8 +55,8 @@ bool buildDistanceField(pcl::PointCloud<pcl::PointXYZ> mapPoints, std::string ma
         if (maxPoint.getZ() < z)
             maxPoint.setZ(z);
     }
-    RCLCPP_INFO(rclcpp::get_logger("map_builder"), "Min map point: %f %f %f", minPoint.getX(), minPoint.getY(), minPoint.getZ());
-    RCLCPP_INFO(rclcpp::get_logger("map_builder"), "Max map point: %f %f %f", maxPoint.getX(), maxPoint.getY(), maxPoint.getZ());
+    printf("Min map point: %f %f %f\n", minPoint.getX(), minPoint.getY(), minPoint.getZ());
+    printf("Max map point: %f %f %f\n", maxPoint.getX(), maxPoint.getY(), maxPoint.getZ());
 
     distMap = mcl3d::DistanceField(mapFileName, resolution, subMapResolution, mapMargin, minPoint, maxPoint, yamlFilePath);
     // FILE *fp = fopen("/tmp/map_points_by_pc_to_df.txt", "w");
@@ -56,25 +74,34 @@ bool buildDistanceField(pcl::PointCloud<pcl::PointXYZ> mapPoints, std::string ma
     // exit(0);
 
     if (!distMap.saveDistanceMap()) {
-        RCLCPP_ERROR(rclcpp::get_logger("map_builder"), "Error occurred during the distance field building.");
-        return false;
+        fprintf(stderr, "Error occurred during the distance field building.\n");
+        exit(1);
     }
+
+/*
+    distMap.loadDistanceMap();
+    FILE *fp = fopen("/tmp/dist_map_2d.txt", "w");
+    for (float x = minPoint.getX(); x < maxPoint.getX(); x += distMap.getSubMapResolution()) {
+        for (float y = minPoint.getY(); y < maxPoint.getY(); y += distMap.getSubMapResolution()) {
+            float d = distMap.getDistance(x, y, 0.0f);
+            if (d >= 0.0f)
+                fprintf(fp, "%f %f %f\n", x, y, d);
+        }
+    }
+    fclose(fp);
+ */
 
     return true;
 }
 
-void mapPointsCB(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+void mapPointsCB(const sensor_msgs::PointCloud2::ConstPtr &msg) {
     pcl::PointCloud<pcl::PointXYZ> mapPoints;
     pcl::fromROSMsg(*msg, mapPoints);
     doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
 }
 
 int main(int argc, char **argv) {
-    rclcpp::init(argc, argv);
-    rclcpp::NodeOptions options;
-    auto node = rclcpp::Node::make_shared("pc_to_df", options);
     if (argv[4] != NULL && argv[6] != NULL) {
-    // if (argc >= 7) {
         // build a distance field map from a PCD file
         // do not use any ROS functions
         std::string pcdFile = argv[1];
@@ -84,18 +111,20 @@ int main(int argc, char **argv) {
         mapMargin = std::atof(argv[5]);
         yamlFilePath = argv[6];
 
-        RCLCPP_INFO(node->get_logger(), "pcdFile: %s", pcdFile.c_str());
-        RCLCPP_INFO(node->get_logger(), "mapFileName: %s", mapFileName.c_str());
-        RCLCPP_INFO(node->get_logger(), "resolution: %f [m]", resolution);
-        RCLCPP_INFO(node->get_logger(), "subMapResolution: %f [m]", subMapResolution);
-        RCLCPP_INFO(node->get_logger(), "mapMargin: %f [m]", mapMargin);
-        RCLCPP_INFO(node->get_logger(), "yamlFilePath: %s", yamlFilePath.c_str());
+        printf("pcdFile: %s\n", pcdFile.c_str());
+        printf("mapFileName: %s\n", mapFileName.c_str());
+        printf("resolution: %f [m]\n", resolution);
+        printf("subMapResolution: %f [m]\n", subMapResolution);
+        printf("mapMargin: %f [m]\n", mapMargin);
+        printf("yamlFilePath: %s\n", yamlFilePath.c_str());
 
         pcl::PointCloud<pcl::PointXYZ> mapPoints;
         pcl::io::loadPCDFile(pcdFile, mapPoints);
         doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
     } else {
         // get point cloud from a ROS message and build a distance field map
+        ros::init(argc, argv, "pc_to_df");
+        ros::NodeHandle nh("~");
         std::string mapPointsName = "/map_points";
 
         mapFileName = "dist_map.bin";
@@ -104,39 +133,30 @@ int main(int argc, char **argv) {
         mapMargin = 1.0f;
         yamlFilePath = "/tmp/dist_map.yaml";
 
-        node->declare_parameter("map_points_name", mapPointsName);
-        node->declare_parameter("map_file_name", mapFileName);
-        node->declare_parameter("resolution", resolution);
-        node->declare_parameter("sub_map_resolution", subMapResolution);
-        node->declare_parameter("map_margin", mapMargin);
-        node->declare_parameter("yaml_file_path", yamlFilePath);
+        nh.param("map_points_name", mapPointsName, mapPointsName);
+        nh.param("map_file_name", mapFileName, mapFileName);
+        nh.param("resolution", resolution, resolution);
+        nh.param("sub_map_resolution", subMapResolution, subMapResolution);
+        nh.param("map_margin", mapMargin, mapMargin);
+        nh.param("yaml_file_path", yamlFilePath, yamlFilePath);
 
-        RCLCPP_INFO(node->get_logger(), "mapPointsName: %s", mapPointsName.c_str());
-        RCLCPP_INFO(node->get_logger(), "mapFileName: %s", mapFileName.c_str());
-        RCLCPP_INFO(node->get_logger(), "resolution: %f [m]", resolution);
-        RCLCPP_INFO(node->get_logger(), "subMapResolution: %f [m]", subMapResolution);
-        RCLCPP_INFO(node->get_logger(), "mapMargin: %f [m]", mapMargin);
-        RCLCPP_INFO(node->get_logger(), "yamlFilePath: %s", yamlFilePath.c_str());
+        printf("mapPointsName: %s\n", mapPointsName.c_str());
+        printf("mapFileName: %s\n", mapFileName.c_str());
+        printf("resolution: %f [m]\n", resolution);
+        printf("subMapResolution: %f [m]\n", subMapResolution);
+        printf("mapMargin: %f [m]\n", mapMargin);
+        printf("yamlFilePath: %s\n", yamlFilePath.c_str());
 
-        auto mapPointsCBFunc = [&node](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-            pcl::PointCloud<pcl::PointXYZ> mapPoints;
-            pcl::fromROSMsg(*msg, mapPoints);
-            doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
-        };
+        ros::Subscriber mapPointsSub = nh.subscribe(mapPointsName, 1, mapPointsCB);
 
-        auto mapPointsSub = node->create_subscription<sensor_msgs::msg::PointCloud2>(
-            mapPointsName, 1, mapPointsCBFunc);
-
-        rclcpp::Rate loopRate(1.0);
-        while (rclcpp::ok()) {
-            rclcpp::spin_some(node);
+        ros::Rate loopRate(1.0);
+        while (ros::ok()) {
+            ros::spinOnce();
             if (doneMapBuild)
                 break;
             loopRate.sleep();
         }
     }
-
-    rclcpp::shutdown();
 
     return 0;
 }

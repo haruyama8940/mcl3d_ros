@@ -26,11 +26,11 @@
 #include <pcl/point_types.h>
 #include <pcl/common/projection_matrix.h>
 #include <pcl/filters/approximate_voxel_grid.h>
-#include <mcl3d_ros/Point.h>
-#include <mcl3d_ros/Pose.h>
-#include <mcl3d_ros/Particle.h>
-#include <mcl3d_ros/DistanceField.h>
-#include <mcl3d_ros/IMU.h>
+#include <mcl3d_ros/Point.hpp>
+#include <mcl3d_ros/Pose.hpp>
+#include <mcl3d_ros/Particle.hpp>
+#include <mcl3d_ros/DistanceField.hpp>
+#include <mcl3d_ros/IMU.hpp>
 
 namespace mcl3d {
 

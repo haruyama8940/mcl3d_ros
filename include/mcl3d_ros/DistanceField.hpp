@@ -26,7 +26,7 @@
 #include <iostream>
 #include <vector>
 #include <yaml-cpp/yaml.h>
-#include <mcl3d_ros/Point.h>
+#include <mcl3d_ros/Point.hpp>
 #include <distance_transform/distance_transform.hpp>
 
 namespace mcl3d {

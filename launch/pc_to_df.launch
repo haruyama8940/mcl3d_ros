@@ -13,7 +13,7 @@
     <arg name="map_points_name" default="/map_points" />
 
     <!-- map parameters -->
-    <!-- map name -->
+   
     <arg name="map_file_name" default="dist_map_mcl_3dl.bin" />
 
     <!-- map resolutions. sub_map_resolution is actual resolution for the distance field -->

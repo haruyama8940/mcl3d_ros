@@ -20,7 +20,7 @@
 #ifndef __PARTICLE_H__
 #define __PARTICLE_H__
 
-#include <mcl3d_ros/Pose.h>
+#include <mcl3d_ros/Pose.hpp>
 
 namespace mcl3d {
 

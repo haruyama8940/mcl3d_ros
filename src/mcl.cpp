@@ -17,7 +17,7 @@
  * @author Naoki Akai
  ****************************************************************************/
 
-#include <mcl3d_ros/MCL.h>
+#include <mcl3d_ros/MCL.hpp>
 
 namespace mcl3d {
 

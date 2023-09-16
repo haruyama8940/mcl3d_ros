@@ -17,7 +17,7 @@
  * @author Naoki Akai
  ****************************************************************************/
 
-#include <mcl3d_ros/IMU.h>
+#include <mcl3d_ros/IMU.hpp>
 
 namespace mcl3d {
 
