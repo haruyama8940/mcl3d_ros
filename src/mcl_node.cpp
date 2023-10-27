@@ -28,8 +28,8 @@ class MCLNode : public rclcpp::Node {
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odomSub_; 
         rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialPoseSub_;
         
-        std::string mapFrame_, odomFrame_, 
-                    baseLinkFrame_, laserFrame_, optPoseFrame_;
+        std::string mapFrame_="map", odomFrame_="odom", 
+                    baseLinkFrame_="base_footprint", laserFrame_="surestar", optPoseFrame_="opt_pose";
         //publiser kaku
         rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particlesPub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr optParticlesPub_;
@@ -251,7 +251,7 @@ class MCLNode : public rclcpp::Node {
             this->get_parameter("resample_threshold", resampleThreshold);
             this->declare_parameter("resample_noise", resampleNoise);
             this->get_parameter("resample_noise", resampleNoise);
-             mcl3d::Pose resampleNoise_(resampleNoise[0], resampleNoise[1], resampleNoise[2],
+            mcl3d::Pose resampleNoise_(resampleNoise[0], resampleNoise[1], resampleNoise[2],
             resampleNoise[3], resampleNoise[4], resampleNoise[5]);
             mcl_.setRandomParticleRate(randomParticleRate);
             mcl_.setResampleThreshold(resampleThreshold);
@@ -290,8 +290,8 @@ class MCLNode : public rclcpp::Node {
             this->get_parameter("transform_tolerance", transformTolerance_);
             this->declare_parameter("broadcast_tf", broadcastTF_);
             this->get_parameter("broadcast_tf", broadcastTF_);
-            this->declare_parameter("use_odom_tf", useOdomTF_);
-            this->get_parameter("use_odom_tf", useOdomTF_);
+            // this->declare_parameter("use_odom_tf", useOdomTF_);
+            // this->get_parameter("use_odom_tf", useOdomTF_);
 
              // initialization for MCL
             if (!mcl_.checkParameters()) {
@@ -308,24 +308,40 @@ class MCLNode : public rclcpp::Node {
                 RCLCPP_ERROR(this->get_logger(),"Cannot read map yaml file -> %s", mapYamlFile.c_str());
                 exit(1);
             }
-
+           
             std::vector<mcl3d::Point> mapPoints = mcl_.getMapPoints();
+           
             // sensor_msgs::msg::PointCloud2::SharedPtr mapPointsMsg;
-             sensor_msgs::msg::PointCloud::SharedPtr mapPointsMsg;
-            mapPointsMsg->header.frame_id = mapFrame_;
+            sensor_msgs::msg::PointCloud mapPointsMsg;
+            // mapPointsMsg->header.frame_id = "map";
+            mapPointsMsg.header.frame_id = "map";
+            // mapPointsMsg.header.frame_id = mapFrame_;
+            
+            mapPointsMsg.points.resize((int)mapPoints.size());
             // mapPointsMsg->data.resize((int)mapPoints.size());
-            mapPointsMsg->points.resize((int)mapPoints.size());
+            // mapPointsMsg->points.resize(100000);
+            // RCLCPP_INFO(this->get_logger(),"debug debug");
             for (int i = 0; i < (int)mapPoints.size(); ++i) {
-                geometry_msgs::msg::Point32::SharedPtr p;
-                p->x = mapPoints[i].getX();
-                p->y = mapPoints[i].getY();
-                p->z = mapPoints[i].getZ();
+                // geometry_msgs::msg::Point32::SharedPtr p;
+                // p->x = mapPoints[i].getX();
+                // p->y = mapPoints[i].getY();
+                // p->z = mapPoints[i].getZ();
+                // // mapPointsMsg->data[i] = *p;
+                // // mapPointsMsg->points[i] = *p;
+                // mapPointsMsg.points[i] = *p;
+                geometry_msgs::msg::Point32 p;
+                p.x = mapPoints[i].getX();
+                p.y = mapPoints[i].getY();
+                p.z = mapPoints[i].getZ();
                 // mapPointsMsg->data[i] = *p;
-                mapPointsMsg->points[i] = *p;
+                // mapPointsMsg->points[i] = *p;
+                mapPointsMsg.points[i] = p;
             }
             rclcpp::Time current_point_stamp = rclcpp::Clock(RCL_ROS_TIME).now();
-            mapPointsMsg->header.stamp = current_point_stamp;
-            mapPointsPub_ -> publish(*mapPointsMsg);
+            // mapPointsMsg->header.stamp = current_point_stamp;
+            mapPointsMsg.header.stamp = current_point_stamp;
+            
+            mapPointsPub_ -> publish(mapPointsMsg);
             //272
             this->declare_parameter("log_file", logFile_);
             this->get_parameter("log_file", logFile_);
@@ -335,28 +351,29 @@ class MCLNode : public rclcpp::Node {
         void sensorPointCB(sensor_msgs::msg::PointCloud2::SharedPtr msg){
             static double totalTime = 0.0;
             static int count = 0;
-
             mclPoseStamp_ = msg->header.stamp;
             pcl::PointCloud<pcl::PointXYZ> sensorPointsTmp;
             pcl::fromROSMsg(*msg, sensorPointsTmp);
             pcl::PointCloud<pcl::PointXYZ>::Ptr sensorPoints(new pcl::PointCloud<pcl::PointXYZ>);
             *sensorPoints = sensorPointsTmp;
-
+           
             mcl_.updatePoses();
             std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
             mcl_.calculateLikelihoodsByMeasurementModel(sensorPoints);
             mcl_.optimizeMeasurementModel(sensorPoints);
             mcl_.resampleParticles1();
             mcl_.resampleParticles2();
+            
             std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
             double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
             totalTime += time;
             count++;
             printf("time = %lf, average = %lf\n", time, totalTime / (double)count);
             mcl_.printMCLResult();
+            
             publishROSMessages();
             broadcastTF();
-            writeLog();
+            // writeLog();
         }
         void imuCB(sensor_msgs::msg::Imu::SharedPtr msg){
             double qx = msg->orientation.x;
@@ -408,26 +425,48 @@ class MCLNode : public rclcpp::Node {
         void publishROSMessages(void) {
             //particles
             std::vector<mcl3d::Particle> particles = mcl_.getParticles();
-            geometry_msgs::msg::PoseArray::SharedPtr particlesPoses;
-            particlesPoses->header.frame_id = mapFrame_;
-            particlesPoses->header.stamp = mclPoseStamp_;
-            particlesPoses->poses.resize((int)particles.size());
+            // geometry_msgs::msg::PoseArray::SharedPtr particlesPoses;
+            // particlesPoses->header.frame_id = mapFrame_;
+            // particlesPoses->header.stamp = mclPoseStamp_;
+            // RCLCPP_INFO(this->get_logger(),"debug debug");
+            // particlesPoses->poses.resize((int)particles.size());
+            // for (int i = 0; i < (int)particles.size(); ++i){
+            //     geometry_msgs::msg::Pose::SharedPtr pose;
+            //     pose->position.x = particles[i].getX();
+            //     pose->position.y = particles[i].getY();
+            //     pose->position.z = particles[i].getZ();
+            //     tf2::Quaternion q;
+            //     q.setRPY(particles[i].getRoll(),particles[i].getRoll(),particles[i].getYaw());
+            //     // tf2::convert(pose->orientation, mclQuat);
+            //     // tf2::fromMsg(mclQuat,pose->orientation);
+            //     pose->orientation = tf2::toMsg(q);
+            //     particlesPoses->poses[i] = *pose;
+            // }
+            // //pub
+            // particlesPub_->publish(*particlesPoses);
+            geometry_msgs::msg::PoseArray particlesPoses;
+            particlesPoses.header.frame_id = mapFrame_;
+            particlesPoses.header.stamp = mclPoseStamp_;
+            particlesPoses.poses.resize((int)particles.size());
             for (int i = 0; i < (int)particles.size(); ++i){
-                geometry_msgs::msg::Pose::SharedPtr pose;
-                pose->position.x = particles[i].getX();
-                pose->position.y = particles[i].getY();
-                pose->position.z = particles[i].getZ();
+                geometry_msgs::msg::Pose pose;
+                pose.position.x = particles[i].getX();
+                pose.position.y = particles[i].getY();
+                pose.position.z = particles[i].getZ();
                 tf2::Quaternion q;
                 q.setRPY(particles[i].getRoll(),particles[i].getRoll(),particles[i].getYaw());
                 // tf2::convert(pose->orientation, mclQuat);
                 // tf2::fromMsg(mclQuat,pose->orientation);
-                pose->orientation = tf2::toMsg(q);
-                particlesPoses->poses[i] = *pose;
+                pose.orientation = tf2::toMsg(q);
+                particlesPoses.poses[i] = pose;
             }
+           
             //pub
-            particlesPub_->publish(*particlesPoses);
+            particlesPub_->publish(particlesPoses);
 
+           
             //optimized particles
+            /*
             std::vector<mcl3d::Particle> optParticles = mcl_.getOptParticles();
             geometry_msgs::msg::PoseArray::SharedPtr optParticlesPoses;
             optParticlesPoses->header.frame_id =mapFrame_;
@@ -445,10 +484,33 @@ class MCLNode : public rclcpp::Node {
                 // tf2::fromMsg(q,pose->orientation);
                 optParticlesPoses->poses[i] = *pose;
             }
-            //pub
-            optParticlesPub_->publish(*optParticlesPoses);
             
+            //optParticlePub
+            optParticlesPub_->publish(*optParticlesPoses);
+            */
+             //optimized particles
+            std::vector<mcl3d::Particle> optParticles = mcl_.getOptParticles();
+            geometry_msgs::msg::PoseArray optParticlesPoses;
+            optParticlesPoses.header.frame_id =mapFrame_;
+            optParticlesPoses.header.stamp =mclPoseStamp_;
+            optParticlesPoses.poses.resize((int)optParticles.size());
+            for (int i = 0; i < (int)optParticles.size(); ++i) {
+                geometry_msgs::msg::Pose pose;
+                pose.position.x = optParticles[i].getX();
+                pose.position.y = optParticles[i].getY();
+                pose.position.z = optParticles[i].getZ();
+                tf2::Quaternion q;
+                q.setRPY(optParticles[i].getRoll(),optParticles[i].getPitch(),optParticles[i].getYaw());
+                pose.orientation = tf2::toMsg(q);
+                // tf2::convert(q, pose->orientation);
+                // tf2::fromMsg(q,pose->orientation);
+                optParticlesPoses.poses[i] = pose;
+            }
+            //pub
+            optParticlesPub_->publish(optParticlesPoses);
+            RCLCPP_INFO(this->get_logger(),"debug debug");
             // mcl and optimized poses 396
+            /*
             geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr mclPoseMsg, optPoseMsg;
             mcl3d::Pose mclPose = mcl_.getMCLPose();
             mcl3d::Pose optPose = mcl_.getOptPose();
@@ -474,7 +536,6 @@ class MCLNode : public rclcpp::Node {
             optPoseMsg->pose.pose.orientation = tf2::toMsg(optQuat);
             // tf2::convert(optQuat, optPoseMsg->pose.pose.orientation);
             // tf2::fromMsg(optQuat, optPoseMsg->pose.pose.orientation);
-
             std::vector<std::vector<double>> poseCov = mcl_.getPoseCovariance();
             std::vector<std::vector<double>> optPoseCov = mcl_.getOptPoseCovariance();
             for (int i = 0; i < 6; ++i) {
@@ -486,8 +547,44 @@ class MCLNode : public rclcpp::Node {
             //pub
             posePub_->publish(*mclPoseMsg);
             optPosePub_->publish(*optPoseMsg);
+            */
+            geometry_msgs::msg::PoseWithCovarianceStamped mclPoseMsg, optPoseMsg;
+            mcl3d::Pose mclPose = mcl_.getMCLPose();
+            mcl3d::Pose optPose = mcl_.getOptPose();
+
+            mclPoseMsg.header.frame_id = mapFrame_;
+            mclPoseMsg.header.stamp = mclPoseStamp_;
+            mclPoseMsg.pose.pose.position.x = mclPose.getX();
+            mclPoseMsg.pose.pose.position.y = mclPose.getY();
+            mclPoseMsg.pose.pose.position.z = mclPose.getZ();
+            tf2::Quaternion mclQuat;
+            mclQuat.setRPY(mclPose.getRoll(),mclPose.getPitch(),mclPose.getYaw());
+            mclPoseMsg.pose.pose.orientation = tf2::toMsg(mclQuat);
+            // tf2::convert(mclQuat, mclPoseMsg->pose.pose.orientation);
+            // tf2::fromMsg(mclQuat, mclPoseMsg->pose.pose.orientation);
+
+            optPoseMsg.header.frame_id = mapFrame_;
+            optPoseMsg.header.stamp = mclPoseStamp_;
+            optPoseMsg.pose.pose.position.x = optPose.getX();
+            optPoseMsg.pose.pose.position.y = optPose.getY();
+            optPoseMsg.pose.pose.position.z = optPose.getZ();
+            tf2::Quaternion optQuat;
+            optQuat.setRPY(optPose.getRoll(),optPose.getPitch(),optPose.getYaw());
+            optPoseMsg.pose.pose.orientation = tf2::toMsg(optQuat);
+            std::vector<std::vector<double>> poseCov = mcl_.getPoseCovariance();
+            std::vector<std::vector<double>> optPoseCov = mcl_.getOptPoseCovariance();
+            for (int i = 0; i < 6; ++i) {
+                for (int j = 0; j < 6; ++j) {
+                mclPoseMsg.pose.covariance[j *6 + i] = poseCov[i][j];
+                optPoseMsg.pose.covariance[j *6 + i] = optPoseCov[i][j];
+                }
+            }
+            //pub
+            posePub_->publish(mclPoseMsg);
+            optPosePub_->publish(optPoseMsg);
 
             // aligned points
+            /*
             pcl::PointCloud<pcl::PointXYZ> alignedPointsOpt = mcl_.getAlignedPointsOpt();
             sensor_msgs::msg::PointCloud::SharedPtr alignedPointsOptMsg;
             // sensor_msgs::msg::PointCloud2::SharedPtr alignedPointsOptMsg;
@@ -504,98 +601,116 @@ class MCLNode : public rclcpp::Node {
             alignedPointsOptMsg->header.frame_id = laserFrame_;
             alignedPointsOptMsg->header.stamp = mclPoseStamp_;
             alignedPointsOptPub_->publish(*alignedPointsOptMsg);
-    }
-    void broadcastTF(void) {
-        if (!broadcastTF_)
-            return;
-
-        mcl3d::Pose mclPose = mcl_.getMCLPose();
-        geometry_msgs::msg::Pose poseOnMap;
-        poseOnMap.position.x = mclPose.getX();
-        poseOnMap.position.y = mclPose.getY();
-        poseOnMap.position.z = mclPose.getZ();
-        tf2::Quaternion mclQuat;
-        mclQuat.setRPY(mclPose.getRoll(),mclPose.getPitch(),mclPose.getYaw());
-        poseOnMap.orientation = tf2::toMsg(mclQuat);
-        tf2::Transform map2baseTrans;
-        tf2::convert(poseOnMap,map2baseTrans);
-        // tf2::convert(mclQuat, poseOnMap.orientation);
-        // tf2::convert(mclQuat, poseOnMap.orientation);
-
-        if (useOdomTF_) {
-            // make TF tree as map -> odom -> base_link -> laser
-            mcl3d::Pose odomPose = mcl_.getOdomPose();
-            geometry_msgs::msg::Pose poseOnOdom;
-            poseOnOdom.position.x = odomPose.getX();
-            poseOnOdom.position.y = odomPose.getY();
-            poseOnOdom.position.z = odomPose.getZ();
-            tf2::Quaternion odomQuat;
-            odomQuat.setRPY(odomPose.getRoll(),odomPose.getPitch(),odomPose.getYaw());
-            poseOnOdom.orientation= tf2::toMsg(odomQuat);
-            tf2::Transform odom2baseTrans;
-            tf2::convert(poseOnOdom,odom2baseTrans);
-
-            tf2::Transform map2odomTrans = map2baseTrans * odom2baseTrans.inverse();
-            rclcpp::Duration trans_duration = rclcpp::Duration::from_seconds(transformTolerance_);
-            rclcpp::Time transformExpiration =(mclPoseStamp_ + trans_duration);
-            geometry_msgs::msg::TransformStamped map2odomStampedTrans;
-            map2odomStampedTrans.header.stamp = transformExpiration;
-            map2odomStampedTrans.header.frame_id = mapFrame_;
-            map2odomStampedTrans.child_frame_id = odomFrame_;
-            tf2::convert(map2odomTrans, map2odomStampedTrans.transform);
-            tfBroadcaster_->sendTransform(map2odomStampedTrans);
-
-        }
-        else {
-            // make TF tree as map -> base_link -> laser
-            geometry_msgs::msg::TransformStamped map2baseStampedTrans;
-            map2baseStampedTrans.header.stamp = mclPoseStamp_;
-            map2baseStampedTrans.header.frame_id = mapFrame_;
-            map2baseStampedTrans.child_frame_id = baseLinkFrame_;
-            tf2::convert(map2baseTrans, map2baseStampedTrans.transform);
-            tfBroadcaster_->sendTransform(map2baseStampedTrans);
-        }
-
-        // optimized pose
-        mcl3d::Pose optPose = mcl_.getOptPose();
-        geometry_msgs::msg::Pose optPoseOnMap;
-        optPoseOnMap.position.x = optPose.getX();
-        optPoseOnMap.position.y = optPose.getY();
-        optPoseOnMap.position.z = optPose.getZ();
-        tf2::Quaternion optQuat ;
-        optQuat.setRPY(optPose.getRoll(),optPose.getPitch(),optPose.getYaw());
-        optPoseOnMap.orientation =tf2::toMsg(optQuat);
-        tf2::Transform map2optPoseTrans;
-        tf2::convert(optPoseOnMap, map2optPoseTrans);
-        geometry_msgs::msg::TransformStamped map2optPoseStampedTrans;
-        map2optPoseStampedTrans.header.stamp = mclPoseStamp_;
-        map2optPoseStampedTrans.header.frame_id = mapFrame_;
-        map2optPoseStampedTrans.child_frame_id = optPoseFrame_;
-        tf2::convert(map2optPoseTrans, map2optPoseStampedTrans.transform);
-        tfBroadcaster_->sendTransform(map2optPoseStampedTrans);
-    }
-    void writeLog(void) {
-        if (!writeLog_)
-            return;
-
-        static FILE *fp;
-        if (fp == NULL) {
-            fp = fopen(logFile_.c_str(), "w");
-            if (fp == NULL) {
-                fprintf(stderr, "Cannot open %s\n", logFile_.c_str());
-                return;
+            */
+            pcl::PointCloud<pcl::PointXYZ> alignedPointsOpt = mcl_.getAlignedPointsOpt();
+            sensor_msgs::msg::PointCloud alignedPointsOptMsg;
+            // sensor_msgs::msg::PointCloud2::SharedPtr alignedPointsOptMsg;
+            // alignedPointsOptMsg->data.resize((int)alignedPointsOpt.points.size());
+            alignedPointsOptMsg.points.resize((int)alignedPointsOpt.points.size());
+            for (int i = 0; i < (int)alignedPointsOpt.points.size(); ++i) {
+                geometry_msgs::msg::Point32 p;
+                p.x = alignedPointsOpt.points[i].x;
+                p.y = alignedPointsOpt.points[i].y;
+                p.z = alignedPointsOpt.points[i].z;
+                
+                alignedPointsOptMsg.points[i] = p;
             }
+            alignedPointsOptMsg.header.frame_id = laserFrame_;
+            alignedPointsOptMsg.header.stamp = mclPoseStamp_;
+            alignedPointsOptPub_->publish(alignedPointsOptMsg);
         }
 
-        mcl3d::Pose mclPose = mcl_.getMCLPose();
-        mcl3d::Pose optPose = mcl_.getOptPose();
-        fprintf(fp, "%ld "
-            "%lf %lf %lf %lf %lf %lf "
-            "%lf %lf %lf %lf %lf %lf\n",
-            mclPoseStamp_.nanoseconds(),
-            mclPose.getX(), mclPose.getY(), mclPose.getZ(), mclPose.getRoll(), mclPose.getPitch(), mclPose.getYaw(),
-            optPose.getX(), optPose.getY(), optPose.getZ(), optPose.getRoll(), optPose.getPitch(), optPose.getYaw());
-    }
+        void broadcastTF(void) {
+            if (!broadcastTF_)
+                return;
+
+            mcl3d::Pose mclPose = mcl_.getMCLPose();
+            geometry_msgs::msg::Pose poseOnMap;
+            poseOnMap.position.x = mclPose.getX();
+            poseOnMap.position.y = mclPose.getY();
+            poseOnMap.position.z = mclPose.getZ();
+            tf2::Quaternion mclQuat;
+            mclQuat.setRPY(mclPose.getRoll(),mclPose.getPitch(),mclPose.getYaw());
+            poseOnMap.orientation = tf2::toMsg(mclQuat);
+            tf2::Transform map2baseTrans;
+            tf2::convert(poseOnMap,map2baseTrans);
+            // tf2::convert(mclQuat, poseOnMap.orientation);
+            // tf2::convert(mclQuat, poseOnMap.orientation);
+
+            if (useOdomTF_) {
+                // make TF tree as map -> odom -> base_link -> laser
+                mcl3d::Pose odomPose = mcl_.getOdomPose();
+                geometry_msgs::msg::Pose poseOnOdom;
+                poseOnOdom.position.x = odomPose.getX();
+                poseOnOdom.position.y = odomPose.getY();
+                poseOnOdom.position.z = odomPose.getZ();
+                tf2::Quaternion odomQuat;
+                odomQuat.setRPY(odomPose.getRoll(),odomPose.getPitch(),odomPose.getYaw());
+                poseOnOdom.orientation= tf2::toMsg(odomQuat);
+                tf2::Transform odom2baseTrans;
+                tf2::convert(poseOnOdom,odom2baseTrans);
+
+                tf2::Transform map2odomTrans = map2baseTrans * odom2baseTrans.inverse();
+                rclcpp::Duration trans_duration = rclcpp::Duration::from_seconds(transformTolerance_);
+                rclcpp::Time transformExpiration =(mclPoseStamp_ + trans_duration);
+                geometry_msgs::msg::TransformStamped map2odomStampedTrans;
+                map2odomStampedTrans.header.stamp = transformExpiration;
+                map2odomStampedTrans.header.frame_id = mapFrame_;
+                map2odomStampedTrans.child_frame_id = odomFrame_;
+                tf2::convert(map2odomTrans, map2odomStampedTrans.transform);
+                tfBroadcaster_->sendTransform(map2odomStampedTrans);
+
+            }
+            else {
+                // make TF tree as map -> base_link -> laser
+                geometry_msgs::msg::TransformStamped map2baseStampedTrans;
+                map2baseStampedTrans.header.stamp = mclPoseStamp_;
+                map2baseStampedTrans.header.frame_id = mapFrame_;
+                map2baseStampedTrans.child_frame_id = baseLinkFrame_;
+                tf2::convert(map2baseTrans, map2baseStampedTrans.transform);
+                tfBroadcaster_->sendTransform(map2baseStampedTrans);
+            }
+
+            // optimized pose
+            mcl3d::Pose optPose = mcl_.getOptPose();
+            geometry_msgs::msg::Pose optPoseOnMap;
+            optPoseOnMap.position.x = optPose.getX();
+            optPoseOnMap.position.y = optPose.getY();
+            optPoseOnMap.position.z = optPose.getZ();
+            tf2::Quaternion optQuat ;
+            optQuat.setRPY(optPose.getRoll(),optPose.getPitch(),optPose.getYaw());
+            optPoseOnMap.orientation =tf2::toMsg(optQuat);
+            tf2::Transform map2optPoseTrans;
+            tf2::convert(optPoseOnMap, map2optPoseTrans);
+            geometry_msgs::msg::TransformStamped map2optPoseStampedTrans;
+            map2optPoseStampedTrans.header.stamp = mclPoseStamp_;
+            map2optPoseStampedTrans.header.frame_id = mapFrame_;
+            map2optPoseStampedTrans.child_frame_id = optPoseFrame_;
+            tf2::convert(map2optPoseTrans, map2optPoseStampedTrans.transform);
+            tfBroadcaster_->sendTransform(map2optPoseStampedTrans);
+        }
+    // void writeLog(void) {
+    //     if (!writeLog_)
+    //         return;
+
+    //     static FILE *fp;
+    //     if (fp == NULL) {
+    //         fp = fopen(logFile_.c_str(), "w");
+    //         if (fp == NULL) {
+    //             fprintf(stderr, "Cannot open %s\n", logFile_.c_str());
+    //             return;
+    //         }
+    //     }
+
+    //     mcl3d::Pose mclPose = mcl_.getMCLPose();
+    //     mcl3d::Pose optPose = mcl_.getOptPose();
+    //     fprintf(fp, "%ld "
+    //         "%lf %lf %lf %lf %lf %lf "
+    //         "%lf %lf %lf %lf %lf %lf\n",
+    //         mclPoseStamp_.nanoseconds(),
+    //         mclPose.getX(), mclPose.getY(), mclPose.getZ(), mclPose.getRoll(), mclPose.getPitch(), mclPose.getYaw(),
+    //         optPose.getX(), optPose.getY(), optPose.getZ(), optPose.getRoll(), optPose.getPitch(), optPose.getYaw());
+    // }
     // 
     
 
@@ -607,11 +722,12 @@ class MCLNode : public rclcpp::Node {
     {
         rclcpp::init(argc, argv);
         auto node = std::make_shared<MCLNode>();
-        rclcpp::Rate loop_rate(20.0);
+        rclcpp::Rate loop_rate(10.0);
         while (rclcpp::ok())
         {
             rclcpp::spin_some(node);
             loop_rate.sleep();
         }
+        rclcpp::shutdown();
         return 0;
     }

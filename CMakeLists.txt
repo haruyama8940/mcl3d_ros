@@ -13,7 +13,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
-
+find_package(backward_ros REQUIRED) 
 # Find PCL in ROS 2
 find_package(PCL REQUIRED)
 
@@ -64,7 +64,7 @@ ament_auto_add_executable(pc_to_df
   src/pc_to_df.cpp 
   src/distance_field.cpp)
 target_link_libraries(pc_to_df ${catkin_LIBRARIES} ${YAMLCPP_LIBRARIES})
-
+add_backward(mcl)
 ament_auto_package(
   INSTALL_TO_SHARE
   launch

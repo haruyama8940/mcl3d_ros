@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     rclcpp::NodeOptions options;
     auto node = rclcpp::Node::make_shared("pc_to_df", options);
+    /*
     if (argv[4] != NULL && argv[6] != NULL) {
     // if (argc >= 7) {
         // build a distance field map from a PCD file
@@ -95,21 +96,29 @@ int main(int argc, char **argv) {
         pcl::io::loadPCDFile(pcdFile, mapPoints);
         doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
     } else {
+        */
         // get point cloud from a ROS message and build a distance field map
+        std::string pcdFile = "map.pcd";
         std::string mapPointsName = "/map_points";
-
         mapFileName = "dist_map.bin";
         resolution = 5.0f;
         subMapResolution = 0.1f;
         mapMargin = 1.0f;
         yamlFilePath = "/tmp/dist_map.yaml";
-
+        node->declare_parameter("pcd_file",pcdFile);
         node->declare_parameter("map_points_name", mapPointsName);
         node->declare_parameter("map_file_name", mapFileName);
         node->declare_parameter("resolution", resolution);
         node->declare_parameter("sub_map_resolution", subMapResolution);
         node->declare_parameter("map_margin", mapMargin);
         node->declare_parameter("yaml_file_path", yamlFilePath);
+        node->get_parameter("pcd_file",pcdFile);
+        node->get_parameter("map_points_name", mapPointsName);
+        node->get_parameter("map_file_name", mapFileName);
+        node->get_parameter("resolution", resolution);
+        node->get_parameter("sub_map_resolution", subMapResolution);
+        node->get_parameter("map_margin", mapMargin);
+        node->get_parameter("yaml_file_path", yamlFilePath);
 
         RCLCPP_INFO(node->get_logger(), "mapPointsName: %s", mapPointsName.c_str());
         RCLCPP_INFO(node->get_logger(), "mapFileName: %s", mapFileName.c_str());
@@ -118,14 +127,17 @@ int main(int argc, char **argv) {
         RCLCPP_INFO(node->get_logger(), "mapMargin: %f [m]", mapMargin);
         RCLCPP_INFO(node->get_logger(), "yamlFilePath: %s", yamlFilePath.c_str());
 
-        auto mapPointsCBFunc = [&node](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-            pcl::PointCloud<pcl::PointXYZ> mapPoints;
-            pcl::fromROSMsg(*msg, mapPoints);
-            doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
-        };
+        pcl::PointCloud<pcl::PointXYZ> mapPoints;
+        pcl::io::loadPCDFile(pcdFile, mapPoints);
+        doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
+        // auto mapPointsCBFunc = [&node](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+        //     pcl::PointCloud<pcl::PointXYZ> mapPoints;
+        //     pcl::fromROSMsg(*msg, mapPoints);
+        //     doneMapBuild = buildDistanceField(mapPoints, mapFileName, resolution, subMapResolution, mapMargin, yamlFilePath);
+        // };
 
-        auto mapPointsSub = node->create_subscription<sensor_msgs::msg::PointCloud2>(
-            mapPointsName, 1, mapPointsCBFunc);
+        // auto mapPointsSub = node->create_subscription<sensor_msgs::msg::PointCloud2>(
+        //     mapPointsName, 1, mapPointsCBFunc);
 
         rclcpp::Rate loopRate(1.0);
         while (rclcpp::ok()) {
@@ -134,7 +146,7 @@ int main(int argc, char **argv) {
                 break;
             loopRate.sleep();
         }
-    }
+    // }
 
     rclcpp::shutdown();
 
